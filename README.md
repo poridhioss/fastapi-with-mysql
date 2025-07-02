@@ -1,6 +1,6 @@
-# FastAPI Users API - Testing Documentation
+# FastAPI CRUD App - Testing Documentation
 
-This document provides comprehensive testing instructions for the FastAPI Users API with health check functionality. Each test includes the exact curl command and expected output for verification.
+This document provides comprehensive testing instructions for the FastAPI CRUD App with minimal schema. Each test includes the exact curl command and expected output for verification.
 
 ## Prerequisites
 
@@ -10,6 +10,7 @@ This document provides comprehensive testing instructions for the FastAPI Users 
 
 ## API Endpoints Overview
 
+- **Root**: `GET /`
 - **Health Check**: `GET /health`
 - **List Users**: `GET /users/`
 - **Get User by ID**: `GET /users/{user_id}`
@@ -19,7 +20,27 @@ This document provides comprehensive testing instructions for the FastAPI Users 
 
 ## Test Cases
 
-### 1. Health Check
+### 1. Root Endpoint
+
+**Purpose**: Verify the application is running and get basic information.
+
+**Command**:
+```bash
+curl -X GET http://localhost:8000/
+```
+
+**Expected Output**:
+```json
+{
+  "message": "FastAPI CRUD App – minimal schema",
+  "docs": "/docs",
+  "health": "/health"
+}
+```
+
+**Verification**: Should return basic app information with links to documentation and health endpoints.
+
+### 2. Health Check
 
 **Purpose**: Verify the application and database are running correctly.
 
@@ -31,7 +52,7 @@ curl -X GET http://localhost:8000/health | jq .
 **Expected Output**:
 ```json
 {
-  "timestamp": "2025-07-02T15:11:01.398225",
+  "timestamp": "2025-07-02T16:57:56.015977",
   "app": {
     "status": "healthy",
     "message": "FastAPI is running"
@@ -47,13 +68,13 @@ curl -X GET http://localhost:8000/health | jq .
 
 **Verification**: All status fields should show "healthy" and timestamp should be current.
 
-### 2. List Users (Empty Database)
+### 3. List Users (Empty Database)
 
 **Purpose**: Verify empty user list when no users exist.
 
 **Command**:
 ```bash
-curl -X GET "http://localhost:8000/users/" | jq .
+curl -X GET "http://localhost:8000/users/?skip=0&limit=100" | jq .
 ```
 
 **Expected Output**:
@@ -63,76 +84,9 @@ curl -X GET "http://localhost:8000/users/" | jq .
 
 **Verification**: Should return an empty array.
 
-### 3. List Users with Pagination (Empty Database)
+### 4. Get Non-Existent User
 
-**Purpose**: Test pagination parameters with empty database.
-
-**Command**:
-```bash
-curl -X GET "http://localhost:8000/users/?skip=0&limit=20" | jq .
-```
-
-**Expected Output**:
-```json
-[]
-```
-
-**Verification**: Should return an empty array regardless of pagination parameters.
-
-### 4. Create User
-
-**Purpose**: Create a new user in the system.
-
-**Command**:
-```bash
-curl -X POST http://localhost:8000/users/ \
-     -H "Content-Type: application/json" \
-     -d '{"name": "Alice", "email": "alice@example.com"}'
-```
-
-**Expected Output**:
-```json
-{
-  "id": 1,
-  "name": "Alice",
-  "email": "alice@example.com",
-  "created_at": "2025-07-02T15:11:36",
-  "updated_at": "2025-07-02T15:11:36"
-}
-```
-
-**Verification**: 
-- User should receive an auto-generated ID (typically 1 for first user)
-- `created_at` and `updated_at` should be identical
-- Name and email should match input
-
-### 5. List Users (After Creating User)
-
-**Purpose**: Verify user appears in the list after creation.
-
-**Command**:
-```bash
-curl -X GET "http://localhost:8000/users/" | jq .
-```
-
-**Expected Output**:
-```json
-[
-  {
-    "id": 1,
-    "name": "Alice",
-    "email": "alice@example.com",
-    "created_at": "2025-07-02T15:11:36",
-    "updated_at": "2025-07-02T15:11:36"
-  }
-]
-```
-
-**Verification**: Array should contain the created user with all fields populated.
-
-### 6. Get User by ID
-
-**Purpose**: Retrieve a specific user by their ID.
+**Purpose**: Test behavior when requesting a user that doesn't exist.
 
 **Command**:
 ```bash
@@ -142,17 +96,37 @@ curl -X GET http://localhost:8000/users/1 | jq .
 **Expected Output**:
 ```json
 {
-  "id": 1,
-  "name": "Alice",
-  "email": "alice@example.com",
-  "created_at": "2025-07-02T15:11:36",
-  "updated_at": "2025-07-02T15:11:36"
+  "detail": "User not found"
 }
 ```
 
-**Verification**: Should return the exact user data matching the ID requested.
+**Verification**: Should return a 404 error with "User not found" message.
 
-### 7. Update User
+### 5. Create User (Minimal Schema)
+
+**Purpose**: Create a new user with minimal required fields.
+
+**Command**:
+```bash
+curl -X POST http://localhost:8000/users/ \
+     -H "Content-Type: application/json" \
+     -d '{"name":"Alice"}' | jq .
+```
+
+**Expected Output**:
+```json
+{
+  "id": 1,
+  "name": "Alice"
+}
+```
+
+**Verification**: 
+- User should receive an auto-generated ID (typically 1 for first user)
+- Only name field is required and returned
+- No email, timestamps, or other fields in this minimal schema
+
+### 6. Update User
 
 **Purpose**: Update an existing user's information.
 
@@ -160,27 +134,23 @@ curl -X GET http://localhost:8000/users/1 | jq .
 ```bash
 curl -X PUT http://localhost:8000/users/1 \
      -H "Content-Type: application/json" \
-     -d '{"name": "Alice A.", "email": "alice.a@example.com"}'
+     -d '{"name":"Alice Updated"}' | jq .
 ```
 
 **Expected Output**:
 ```json
 {
   "id": 1,
-  "name": "Alice A.",
-  "email": "alice.a@example.com",
-  "created_at": "2025-07-02T15:11:36",
-  "updated_at": "2025-07-02T15:12:11"
+  "name": "Alice Updated"
 }
 ```
 
 **Verification**: 
-- Name and email should be updated
-- `created_at` should remain unchanged
-- `updated_at` should be newer than `created_at`
+- Name should be updated to "Alice Updated"
 - ID should remain the same
+- Response contains only id and name fields
 
-### 8. Verify Update
+### 7. Verify Update
 
 **Purpose**: Confirm the update was persisted by retrieving the user again.
 
@@ -193,34 +163,32 @@ curl -X GET http://localhost:8000/users/1 | jq .
 ```json
 {
   "id": 1,
-  "name": "Alice A.",
-  "email": "alice.a@example.com",
-  "created_at": "2025-07-02T15:11:36",
-  "updated_at": "2025-07-02T15:12:11"
+  "name": "Alice Updated"
 }
 ```
 
-**Verification**: Updated information should be persisted.
+**Verification**: Updated name should be persisted in the database.
 
-### 9. Delete User
+### 8. Delete User
 
 **Purpose**: Remove a user from the system.
 
 **Command**:
 ```bash
-curl -X DELETE http://localhost:8000/users/1
+curl -X DELETE http://localhost:8000/users/1 | jq .
 ```
 
 **Expected Output**:
-```json
-{
-  "message": "User deleted successfully"
-}
+```
+(No output - empty response)
 ```
 
-**Verification**: Should return a success message.
+**Verification**: 
+- Should return empty response body
+- HTTP status should be 200 or 204
+- No JSON output expected
 
-### 10. Verify Deletion
+### 9. Verify Deletion
 
 **Purpose**: Confirm the user was deleted by attempting to retrieve it.
 
@@ -243,41 +211,81 @@ curl -X GET http://localhost:8000/users/1 | jq .
 Run all tests in sequence to verify full CRUD functionality:
 
 ```bash
-# 1. Health check
+# 1. Check root endpoint
+curl -X GET http://localhost:8000/
+
+# 2. Health check
 curl -X GET http://localhost:8000/health | jq .
 
-# 2. List empty users
-curl -X GET "http://localhost:8000/users/" | jq .
+# 3. List empty users
+curl -X GET "http://localhost:8000/users/?skip=0&limit=100" | jq .
 
-# 3. Create user
+# 4. Try to get non-existent user
+curl -X GET http://localhost:8000/users/1 | jq .
+
+# 5. Create user
 curl -X POST http://localhost:8000/users/ \
      -H "Content-Type: application/json" \
-     -d '{"name": "Alice", "email": "alice@example.com"}'
-
-# 4. List users (should show created user)
-curl -X GET "http://localhost:8000/users/" | jq .
-
-# 5. Get user by ID
-curl -X GET http://localhost:8000/users/1 | jq .
+     -d '{"name":"Alice"}' | jq .
 
 # 6. Update user
 curl -X PUT http://localhost:8000/users/1 \
      -H "Content-Type: application/json" \
-     -d '{"name": "Alice A.", "email": "alice.a@example.com"}'
+     -d '{"name":"Alice Updated"}' | jq .
 
 # 7. Verify update
 curl -X GET http://localhost:8000/users/1 | jq .
 
 # 8. Delete user
-curl -X DELETE http://localhost:8000/users/1
+curl -X DELETE http://localhost:8000/users/1 | jq .
 
 # 9. Verify deletion
 curl -X GET http://localhost:8000/users/1 | jq .
 ```
 
-## Error Test Cases
+## Additional Test Cases
 
-### Test Non-Existent User
+### Test Different User Names
+
+**Command**:
+```bash
+curl -X POST http://localhost:8000/users/ \
+     -H "Content-Type: application/json" \
+     -d '{"name":"Bob Smith"}' | jq .
+```
+
+**Expected Output**:
+```json
+{
+  "id": 2,
+  "name": "Bob Smith"
+}
+```
+
+### Test List Users with Data
+
+After creating users, test listing:
+
+**Command**:
+```bash
+curl -X GET "http://localhost:8000/users/" | jq .
+```
+
+**Expected Output** (example with users):
+```json
+[
+  {
+    "id": 1,
+    "name": "Alice"
+  },
+  {
+    "id": 2,
+    "name": "Bob Smith"
+  }
+]
+```
+
+### Test Invalid User ID
 
 **Command**:
 ```bash
@@ -291,20 +299,20 @@ curl -X GET http://localhost:8000/users/999 | jq .
 }
 ```
 
-### Test Invalid User Creation
+## Schema Differences
 
-**Command**:
-```bash
-curl -X POST http://localhost:8000/users/ \
-     -H "Content-Type: application/json" \
-     -d '{"name": "", "email": "invalid-email"}'
-```
+This minimal schema version differs from typical user APIs:
 
-**Expected**: Should return validation errors (specific format depends on your validation rules).
+- **No email field** - Only name is required
+- **No timestamps** - No created_at or updated_at fields
+- **No additional metadata** - Minimal response structure
+- **Empty delete response** - DELETE returns no JSON content
 
 ## Notes
 
-- All timestamps will vary based on when you run the tests
+- All timestamps in health check will vary based on when you run the tests
 - User IDs are auto-generated and may vary depending on database state
+- This is a minimal schema implementation - only `name` field is used
+- DELETE operation returns empty response body (not JSON)
 - Ensure the database is clean before running the complete test sequence for consistent results
 - The `jq` tool is used for JSON formatting - you can omit `| jq .` if you don't have it installed
