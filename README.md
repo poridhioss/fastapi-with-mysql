@@ -1,1 +1,1 @@
-# simple-fast-api-with-helath-check
+# simple-fast-api-with-health-check
