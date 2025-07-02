@@ -249,7 +249,6 @@ async def root():
         "message": "Welcome to FastAPI CRUD Application",
         "docs": "/docs",
         "health": "/health",
-        "db_health": "/health/db"
     }
 
 if __name__ == "__main__":
