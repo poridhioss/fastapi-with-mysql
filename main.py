@@ -1,5 +1,4 @@
 from fastapi import FastAPI, HTTPException, Depends, status
-from fastapi.responses import JSONResponse
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -14,10 +13,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://user:password@localhost:3306/testdb")
+DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://user:password@db:3306/fastapi_db")
 
 # Create database engine
-engine = create_engine(DATABASE_URL, echo=True)
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -32,19 +31,18 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 # Pydantic Models
-class UserBase(BaseModel):
+class UserCreate(BaseModel):
     name: str
     email: str
-
-class UserCreate(UserBase):
-    pass
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
 
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
     id: int
+    name: str
+    email: str
     created_at: datetime
     updated_at: datetime
     
@@ -52,28 +50,15 @@ class UserResponse(UserBase):
         from_attributes = True
 
 # FastAPI app
-app = FastAPI(
-    title="FastAPI CRUD Application",
-    description="A simple CRUD API with health checks",
-    version="1.0.0"
-)
+app = FastAPI(title="Simple FastAPI CRUD")
 
-# Dependency to get database session
+# Database dependency
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-
-# Create tables
-@app.on_event("startup")
-async def startup_event():
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created successfully")
-    except Exception as e:
-        logger.error(f"Error creating database tables: {e}")
 
 # Health check endpoint
 @app.get("/health")
@@ -117,138 +102,90 @@ async def health_check(db: Session = Depends(get_db)):
     return health_status
 
 # CRUD Operations
-
 @app.post("/users/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(user: UserCreate, db: Session = Depends(get_db)):
     """Create a new user"""
-    try:
-        # Check if user with email already exists
-        existing_user = db.query(User).filter(User.email == user.email).first()
+    # Check if user with email already exists
+    existing_user = db.query(User).filter(User.email == user.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    db_user = User(**user.dict())
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+@app.get("/users/", response_model=List[UserResponse])
+async def get_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """Get all users with pagination"""
+    users = db.query(User).offset(skip).limit(limit).all()
+    return users
+
+@app.get("/users/{user_id}", response_model=UserResponse)
+async def get_user(user_id: int, db: Session = Depends(get_db)):
+    """Get a specific user by ID"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    return user
+
+@app.put("/users/{user_id}", response_model=UserResponse)
+async def update_user(user_id: int, user_update: UserUpdate, db: Session = Depends(get_db)):
+    """Update a user"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Check if email is being updated and if it's already taken
+    if user_update.email and user_update.email != user.email:
+        existing_user = db.query(User).filter(User.email == user_update.email).first()
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already registered"
             )
-        
-        db_user = User(**user.dict())
-        db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
-        return db_user
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error creating user: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
-        )
-
-@app.get("/users/", response_model=List[UserResponse])
-async def get_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Get all users with pagination"""
-    try:
-        users = db.query(User).offset(skip).limit(limit).all()
-        return users
-    except Exception as e:
-        logger.error(f"Error fetching users: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
-        )
-
-@app.get("/users/{user_id}", response_model=UserResponse)
-async def get_user(user_id: int, db: Session = Depends(get_db)):
-    """Get a specific user by ID"""
-    try:
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        return user
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching user {user_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
-        )
-
-@app.put("/users/{user_id}", response_model=UserResponse)
-async def update_user(user_id: int, user_update: UserUpdate, db: Session = Depends(get_db)):
-    """Update a user"""
-    try:
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        # Check if email is being updated and if it's already taken
-        if user_update.email and user_update.email != user.email:
-            existing_user = db.query(User).filter(User.email == user_update.email).first()
-            if existing_user:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Email already registered"
-                )
-        
-        # Update fields
-        update_data = user_update.dict(exclude_unset=True)
-        for field, value in update_data.items():
-            setattr(user, field, value)
-        
-        user.updated_at = datetime.utcnow()
-        db.commit()
-        db.refresh(user)
-        return user
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error updating user {user_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
-        )
+    
+    # Update fields
+    update_data = user_update.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(user, field, value)
+    
+    user.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+    return user
 
 @app.delete("/users/{user_id}")
 async def delete_user(user_id: int, db: Session = Depends(get_db)):
     """Delete a user"""
-    try:
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        db.delete(user)
-        db.commit()
-        return {"message": "User deleted successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error deleting user {user_id}: {e}")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
         )
+    
+    db.delete(user)
+    db.commit()
+    return {"message": "User deleted successfully"}
 
-# Root endpoint
 @app.get("/")
 async def root():
     """Root endpoint"""
     return {
-        "message": "Welcome to FastAPI CRUD Application",
+        "message": "FastAPI CRUD App",
         "docs": "/docs",
-        "health": "/health",
+        "health": "/health"
     }
 
 if __name__ == "__main__":
