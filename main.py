@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends, status
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, text
+from sqlalchemy import create_engine, Column, Integer, String, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel
@@ -8,51 +8,51 @@ import os
 from typing import List, Optional
 import logging
 
-# Configure logging
+# ────────────────────────────────────────────────────────────────────────────────
+# Logging
+# ────────────────────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://user:password@db:3306/fastapi_db")
+# ────────────────────────────────────────────────────────────────────────────────
+# Database
+# ────────────────────────────────────────────────────────────────────────────────
+DATABASE_URL = os.getenv("DATABASE_URL")          # e.g. mysql+pymysql://user:pass@db/fastapi_db
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable not set")
 
-# Create database engine
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+engine        = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+SessionLocal  = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base          = declarative_base()
 
-# Database Models
 class User(Base):
+    """SQLAlchemy model reflecting the new users table (id, name)."""
     __tablename__ = "users"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False)
-    email = Column(String(100), unique=True, index=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-# Pydantic Models
+    id   = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String(255), nullable=True)
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Pydantic schemas
+# ────────────────────────────────────────────────────────────────────────────────
 class UserCreate(BaseModel):
     name: str
-    email: str
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
-    email: Optional[str] = None
 
 class UserResponse(BaseModel):
     id: int
-    name: str
-    email: str
-    created_at: datetime
-    updated_at: datetime
-    
+    name: Optional[str] = None
+
     class Config:
-        from_attributes = True
+        from_attributes = True   # SQLAlchemy → Pydantic conversion
 
-# FastAPI app
-app = FastAPI(title="Simple FastAPI CRUD")
+# ────────────────────────────────────────────────────────────────────────────────
+# FastAPI app & dependencies
+# ────────────────────────────────────────────────────────────────────────────────
+app = FastAPI(title="Simple FastAPI CRUD (id & name only)")
 
-# Database dependency
 def get_db():
     db = SessionLocal()
     try:
@@ -60,133 +60,86 @@ def get_db():
     finally:
         db.close()
 
-# Health check endpoint
+# ────────────────────────────────────────────────────────────────────────────────
+# Health-check
+# ────────────────────────────────────────────────────────────────────────────────
 @app.get("/health")
 async def health_check(db: Session = Depends(get_db)):
-    """Check both API and database health"""
-    health_status = {
+    """Verify API & DB connectivity."""
+    status_payload = {
         "timestamp": datetime.utcnow().isoformat(),
-        "app": {
-            "status": "healthy",
-            "message": "FastAPI is running"
-        },
+        "app":      {"status": "healthy", "message": "FastAPI is running"},
         "database": {}
     }
-    
-    # Check database connectivity
     try:
         db.execute(text("SELECT 1"))
-        health_status["database"] = {
-            "status": "healthy",
+        status_payload["database"] = {
+            "status":  "healthy",
             "message": "Database connection is working",
-            "type": "MySQL"
+            "type":    "MySQL"
         }
-        overall_status = "healthy"
-    except Exception as e:
-        logger.error(f"Database health check failed: {e}")
-        health_status["database"] = {
-            "status": "unhealthy",
+        status_payload["overall_status"] = "healthy"
+    except Exception as exc:
+        logger.exception("DB health check failed")
+        status_payload["database"] = {
+            "status":  "unhealthy",
             "message": "Database connection failed",
-            "error": str(e)
+            "error":   str(exc)
         }
-        overall_status = "unhealthy"
-    
-    health_status["overall_status"] = overall_status
-    
-    if overall_status == "unhealthy":
+        status_payload["overall_status"] = "unhealthy"
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=health_status
+            detail=status_payload
         )
-    
-    return health_status
+    return status_payload
 
-# CRUD Operations
+# ────────────────────────────────────────────────────────────────────────────────
+# CRUD endpoints
+# ────────────────────────────────────────────────────────────────────────────────
 @app.post("/users/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    """Create a new user"""
-    # Check if user with email already exists
-    existing_user = db.query(User).filter(User.email == user.email).first()
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
-    
-    db_user = User(**user.dict())
-    db.add(db_user)
+async def create_user(payload: UserCreate, db: Session = Depends(get_db)):
+    new_user = User(name=payload.name)
+    db.add(new_user)
     db.commit()
-    db.refresh(db_user)
-    return db_user
+    db.refresh(new_user)
+    return new_user
 
 @app.get("/users/", response_model=List[UserResponse])
-async def get_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Get all users with pagination"""
-    users = db.query(User).offset(skip).limit(limit).all()
-    return users
+async def list_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return db.query(User).offset(skip).limit(limit).all()
 
 @app.get("/users/{user_id}", response_model=UserResponse)
 async def get_user(user_id: int, db: Session = Depends(get_db)):
-    """Get a specific user by ID"""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).get(user_id)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
+        raise HTTPException(status_code=404, detail="User not found")
     return user
 
 @app.put("/users/{user_id}", response_model=UserResponse)
-async def update_user(user_id: int, user_update: UserUpdate, db: Session = Depends(get_db)):
-    """Update a user"""
-    user = db.query(User).filter(User.id == user_id).first()
+async def update_user(user_id: int, updates: UserUpdate, db: Session = Depends(get_db)):
+    user = db.query(User).get(user_id)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
-    # Check if email is being updated and if it's already taken
-    if user_update.email and user_update.email != user.email:
-        existing_user = db.query(User).filter(User.email == user_update.email).first()
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
-            )
-    
-    # Update fields
-    update_data = user_update.dict(exclude_unset=True)
-    for field, value in update_data.items():
+        raise HTTPException(status_code=404, detail="User not found")
+
+    for field, value in updates.dict(exclude_unset=True).items():
         setattr(user, field, value)
-    
-    user.updated_at = datetime.utcnow()
+
     db.commit()
     db.refresh(user)
     return user
 
-@app.delete("/users/{user_id}")
+@app.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(user_id: int, db: Session = Depends(get_db)):
-    """Delete a user"""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).get(user_id)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
+        raise HTTPException(status_code=404, detail="User not found")
     db.delete(user)
     db.commit()
     return {"message": "User deleted successfully"}
 
 @app.get("/")
 async def root():
-    """Root endpoint"""
-    return {
-        "message": "FastAPI CRUD App",
-        "docs": "/docs",
-        "health": "/health"
-    }
+    return {"message": "FastAPI CRUD App – minimal schema", "docs": "/docs", "health": "/health"}
 
 if __name__ == "__main__":
     import uvicorn
