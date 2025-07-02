@@ -75,39 +75,46 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Error creating database tables: {e}")
 
-# Health check endpoints
+# Health check endpoint
 @app.get("/health")
-async def health_check():
-    """Check if the API is running"""
-    return {
-        "status": "healthy",
-        "message": "FastAPI is running",
-        "timestamp": datetime.utcnow().isoformat()
+async def health_check(db: Session = Depends(get_db)):
+    """Check both API and database health"""
+    health_status = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "app": {
+            "status": "healthy",
+            "message": "FastAPI is running"
+        },
+        "database": {}
     }
-
-@app.get("/health/db")
-async def database_health_check(db: Session = Depends(get_db)):
-    """Check database connectivity"""
+    
+    # Check database connectivity
     try:
-        # Try to execute a simple query
         db.execute(text("SELECT 1"))
-        return {
+        health_status["database"] = {
             "status": "healthy",
             "message": "Database connection is working",
-            "database": "MySQL",
-            "timestamp": datetime.utcnow().isoformat()
+            "type": "MySQL"
         }
+        overall_status = "healthy"
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
+        health_status["database"] = {
+            "status": "unhealthy",
+            "message": "Database connection failed",
+            "error": str(e)
+        }
+        overall_status = "unhealthy"
+    
+    health_status["overall_status"] = overall_status
+    
+    if overall_status == "unhealthy":
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "status": "unhealthy",
-                "message": "Database connection failed",
-                "error": str(e),
-                "timestamp": datetime.utcnow().isoformat()
-            }
+            detail=health_status
         )
+    
+    return health_status
 
 # CRUD Operations
 
