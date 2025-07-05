@@ -128,7 +128,7 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 ### 1. Clone and Setup
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/poridhioss/fastapi-with-mysql.git
 cd fastapi-with-mysql
 ```
 
@@ -396,57 +396,6 @@ curl -X GET http://localhost:8000/users/1 | jq .
 }
 ```
 
-## Testing with Postman
-
-### Setup
-1. Open Postman
-2. Create new collection called "FastAPI Users API"
-3. Add requests for each endpoint
-
-### Health Check
-- **Method**: GET
-- **URL**: `http://localhost:8000/health`
-
-### Root Endpoint
-- **Method**: GET
-- **URL**: `http://localhost:8000/`
-
-### List Users
-- **Method**: GET
-- **URL**: `http://localhost:8000/users/`
-- **Optional Query Parameters**: `skip=0&limit=10`
-
-### Create User
-- **Method**: POST
-- **URL**: `http://localhost:8000/users/`
-- **Headers**: `Content-Type: application/json`
-- **Body** (raw, JSON):
-```json
-{
-  "name": "Alice",
-  "email": "alice@example.com"
-}
-```
-
-### Get User by ID
-- **Method**: GET
-- **URL**: `http://localhost:8000/users/1`
-
-### Update User
-- **Method**: PUT
-- **URL**: `http://localhost:8000/users/1`
-- **Headers**: `Content-Type: application/json`
-- **Body** (raw, JSON):
-```json
-{
-  "name": "Alice A.",
-  "email": "alice.a@example.com"
-}
-```
-
-### Delete User
-- **Method**: DELETE
-- **URL**: `http://localhost:8000/users/1`
 
 ## Database Inspection
 
@@ -498,121 +447,59 @@ exit
 ```
 
 ## Swagger UI Documentation
+## Create a Loadbalancer for the App
 
-Access the built-in API documentation at `http://localhost:8000/docs`
-
-**Features**:
-- Interactive API documentation
-- Test API requests directly from browser
-- View request/response schemas
-- Try out all endpoints with sample data
-- Built-in authentication testing (if implemented)
-
-## Error Handling
-
-The API provides comprehensive error handling:
-
-### Client Errors (4xx)
-- **400 Bad Request**: Email already registered, validation errors
-- **404 Not Found**: User not found
-- **422 Unprocessable Entity**: Invalid request body
-
-### Server Errors (5xx)
-- **503 Service Unavailable**: Database connection issues
-
-### Error Response Format
-```json
-{
-  "detail": "Error message description"
-}
-```
-
-## Environment Configuration
-
-### Database Connection
-The application uses environment variables for database configuration:
+### Install Required Tools
 
 ```bash
-DATABASE_URL=mysql+pymysql://user:password@db:3306/fastapi_db
+sudo apt update
+sudo apt install iproute2 -y
 ```
 
-### Docker Environment Variables
-- `MYSQL_ROOT_PASSWORD`: Root password for MySQL
-- `MYSQL_DATABASE`: Database name
-- `MYSQL_USER`: Application database user
-- `MYSQL_PASSWORD`: Application database password
+### Get Your IP Address
 
-## Troubleshooting
-
-### Connection Issues
-**Problem**: Can't connect to API
-
-**Solutions**:
-- Check container status: `docker ps`
-- View logs: `docker-compose logs`
-- Restart services: `docker-compose restart`
-
-### Database Errors
-**Problem**: Database connection issues
-
-**Solutions**:
-- Check MySQL container logs: `docker-compose logs db`
-- Verify database initialization: Check if `init.sql` executed properly
-- Connect to MySQL directly to inspect tables/data
-- Ensure proper environment variables in docker-compose.yml
-
-### Code Changes Not Showing
-**Problem**: Updates not reflected
-
-**Solution**:
 ```bash
-docker-compose down
-docker-compose up --build
+ip addr show eth0
 ```
 
-### Port Conflicts
-**Problem**: Port 8000 already in use
+**Example Output:**
 
-**Solutions**:
-- Change port mapping in docker-compose.yml: `"8001:8000"`
-- Stop conflicting services: `sudo lsof -i :8000`
+```bash
+root@1121fe19c4929668:~/code/mysql-replication-poc# ip addr show eth0
+4: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether fe:6d:83:dd:53:af brd ff:ff:ff:ff:ff:ff
+    inet 10.62.5.212/16 brd 10.62.255.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::fc6d:83ff:fedd:53af/64 scope link 
+       valid_lft forever preferred_lft forever
+root@1121fe19c4929668:~/code/mysql-replication-poc# 
+```
 
-### MySQL Connection Errors
-**Problem**: Can't connect to MySQL
+**Note:** In our case it is `10.62.5.212`. Copy your own IP address from the output.
 
-**Common Solutions**:
-- Wait for MySQL to fully initialize (can take 30-60 seconds on first run)
-- Check MySQL logs for initialization errors
-- Verify credentials in docker-compose.yml match application configuration
+### Create Load Balancer
 
-## Development Tips
+Create a load balancer using your IP address and port `8000`.
 
-1. **View Real-time Logs**:
-   ```bash
-   docker-compose logs -f app
-   docker-compose logs -f db
-   ```
+![alt text](https://raw.githubusercontent.com/poridhiEng/lab-asset/refs/heads/main/DB%20Replication/Lab%2002/images/image.png)
 
-2. **Rebuild After Code Changes**:
-   ```bash
-   docker-compose up --build app
-   ```
+### Access the Application
 
-3. **Connect to Running Container**:
-   ```bash
-   docker exec -it <container-name> /bin/bash
-   ```
+Once your load balancer is created, you can access the FastAPI application through the following endpoints:
 
-4. **Database Backup**:
-   ```bash
-   docker exec <mysql-container> mysqldump -u user -p fastapi_db > backup.sql
-   ```
+#### Health Check Endpoint
+```bash
+http://your-load-balancer-url/health
+```
 
-## Notes
+![alt text](https://raw.githubusercontent.com/poridhiEng/lab-asset/refs/heads/main/DB%20Replication/Lab%2002/images/image-1.png)
 
-- All timestamps are in UTC format
-- User IDs are auto-generated and may vary depending on database state
-- Email addresses must be unique across all users
-- The `jq` tool is used for JSON formatting (optional - can be omitted if not installed)
-- MySQL data persists between container restarts due to volume mapping
-- API automatically generates OpenAPI documentation available at `/docs` and `/redoc`
+
+#### API Documentation
+```bash
+http://your-load-balancer-url/docs
+```
+
+![alt text](https://raw.githubusercontent.com/poridhiEng/lab-asset/refs/heads/main/DB%20Replication/Lab%2002/images/image-2.png)
+
+**Note:** Replace `your-load-balancer-url` with your actual load balancer URL.
