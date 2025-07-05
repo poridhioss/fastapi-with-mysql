@@ -6,6 +6,9 @@ The goal of this project is to build a FastAPI-based CRUD (Create, Read, Update,
 
 This document provides comprehensive testing instructions for the FastAPI Users API with health check functionality. Testing has been performed using both command-line tools (curl) and GUI-based testing (Postman). Each test includes exact `curl` commands, expected outputs, and step-by-step Postman instructions.
 
+## Workflow
+![arch](https://raw.githubusercontent.com/poridhiEng/lab-asset/6232d702677ce87b8adf0f5e143cf10238ea2a13/DB%20Replication/Lab%2002/images/seminar-dia-4.svg)
+
 ## Prerequisites
 
 Before starting this project, ensure you have the following installed on your system:
